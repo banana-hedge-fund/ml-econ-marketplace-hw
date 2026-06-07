@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+tables/
+*.aux
+*.log
+*.out
+*.toc
