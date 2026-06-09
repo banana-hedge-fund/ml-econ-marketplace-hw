@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-# ============================================================================
-# Домашнее задание по курсу «Машинное обучение в экономике», 2025-2026.
-# Тема: влияние подключения малого бизнеса к маркетплейсу на месячную выручку.
-# Один файл воспроизводит все результаты. Таблицы (CSV) сохраняются в ./tables,
-# рисунки (PNG) в ./figures. Нумерация блоков соответствует заданию.
-# Запуск:  python3 hw.py
-# ============================================================================
+# Домашнее задание по курсу «Машинное обучение в экономике»
+# Влияние подключения малого бизнеса к маркетплейсу на месячную выручку фирмы
+# Романов Алексей, Галкин Евгений
+# https://github.com/banana-hedge-fund/ml-econ-marketplace-hw
 import os, json, warnings
 import numpy as np, pandas as pd
 from pathlib import Path
@@ -354,6 +351,34 @@ for kind in ['best', 'worst']:
     l = float(DoubleMLIIVM(dat_iv, ml_g=reg_k(kind), ml_m=clf_k(kind), ml_r=clf_k(kind), n_folds=5).fit().coef[0])
     rows.append([kind, round(a, 2), round(a-true_ATE, 2), round(l, 2), round(l-true_LATE, 2)])
 savetab(pd.DataFrame(rows, columns=['Качество ML-моделей', 'DML без IV (ATE)', 'Смещение ATE', 'DML с IV (LATE)', 'Смещение LATE']), 'late_robust.csv')
+
+# 5.6 (повыш. сложность) параметрическая модель эндогенного переключения (MLE), аналог switchSelection.
+# Уравнение отбора (подключения) с инструментом Z + два уравнения выручки для режимов D=0 и D=1;
+# совместная нормальность ошибок (corr rho0, rho1) корректирует эндогенность.
+from scipy.optimize import minimize as _minimize
+from scipy.stats import norm as _norm
+_Xs = np.column_stack([np.ones(len(df)), np.log(df['age']), np.sqrt(df['size']), df['online'], df['city']])
+_W = np.column_stack([_Xs, df['Z'].values]); _kf = _Xs.shape[1]; _kw = _W.shape[1]
+def _switch_negll(th):
+    gp = th[:_kw]; b0 = th[_kw:_kw+_kf]; b1 = th[_kw+_kf:_kw+2*_kf]
+    s0 = np.exp(th[_kw+2*_kf]); s1 = np.exp(th[_kw+2*_kf+1]); r0 = np.tanh(th[_kw+2*_kf+2]); r1 = np.tanh(th[_kw+2*_kf+3])
+    Wg = _W @ gp; e1 = (Y - _Xs @ b1)/s1; e0 = (Y - _Xs @ b0)/s0
+    ll1 = _norm.logpdf(e1) - np.log(s1) + _norm.logcdf((Wg + r1*e1)/np.sqrt(1-r1**2))
+    ll0 = _norm.logpdf(e0) - np.log(s0) + _norm.logcdf(-(Wg + r0*e0)/np.sqrt(1-r0**2))
+    ll = np.where(D == 1, ll1, ll0)
+    return 1e10 if not np.all(np.isfinite(ll)) else -ll.sum()
+_b1 = np.linalg.lstsq(_Xs[D == 1], Y[D == 1], rcond=None)[0]; _b0 = np.linalg.lstsq(_Xs[D == 0], Y[D == 0], rcond=None)[0]
+_th0 = np.concatenate([np.zeros(_kw), _b0, _b1, [np.log(25), np.log(25), 0, 0]])
+_fit = _minimize(_switch_negll, _th0, method='Nelder-Mead', options={'maxiter': 60000, 'maxfev': 60000, 'xatol': 1e-4, 'fatol': 1e-3})
+_thx = _fit.x; _b0 = _thx[_kw:_kw+_kf]; _b1 = _thx[_kw+_kf:_kw+2*_kf]
+_r0 = np.tanh(_thx[_kw+2*_kf+2]); _r1 = np.tanh(_thx[_kw+2*_kf+3]); ate_switch = float((_Xs @ (_b1 - _b0)).mean())
+savetab(pd.DataFrame([['Методы на наблюдаемых (DML без IV)', round(float(irm.coef[0]), 2), round(float(irm.coef[0])-true_ATE, 2)],
+                      ['Параметрическое эндог. переключение (MLE)', round(ate_switch, 2), round(ate_switch-true_ATE, 2)],
+                      ['Двойное машинное обучение с IV', round(late_dml, 2), round(late_dml-true_ATE, 2)],
+                      ['Истинный ATE', round(true_ATE, 2), 0.0]],
+                     columns=['Метод', 'Оценка эффекта', 'Смещение от истинного ATE']), 'switch_param.csv')
+print(f'[Р5-парам] switching MLE: ATE={ate_switch:.2f}, rho0={_r0:.2f}, rho1={_r1:.2f}', flush=True)
+
 json.dump({'true_ATE': true_ATE, 'true_LATE': true_LATE, 'compliers': float(comp.mean())}, open(TAB/'true_effects.json', 'w'))
 print(f'[Р5] истинный ATE={true_ATE:.2f}, LATE={true_LATE:.2f}; наивная={res["Наивная разница средних"]:.2f}, '
       f'DML без IV={float(irm.coef[0]):.2f}, DML с IV(LATE)={late_dml:.2f}, Wald={wald:.2f}', flush=True)
