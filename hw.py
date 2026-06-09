@@ -1,8 +1,11 @@
-# -*- coding: utf-8 -*-
 # Домашнее задание по курсу «Машинное обучение в экономике»
 # Влияние подключения малого бизнеса к маркетплейсу на месячную выручку фирмы
 # Романов Алексей, Галкин Евгений
 # https://github.com/banana-hedge-fund/ml-econ-marketplace-hw
+#
+# Python 3.10+. Установка зависимостей:
+#   pip install numpy pandas scikit-learn scipy matplotlib statsmodels doubleml pgmpy catboost
+# Запуск: python hw.py  (результаты появятся в папках figures/ и tables/)
 
 import json
 import warnings
